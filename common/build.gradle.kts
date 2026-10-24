@@ -28,17 +28,11 @@ dependencies {
     // apache commons
     api(libs.commons.text)
 
-    // floating
-    // https://github.com/Petterpx/FloatingX
-    api(libs.floatingx)
-    api(libs.floatingx.compose)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
 
-    // quickjs
-    api(libs.quickjs)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

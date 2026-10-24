@@ -25,18 +25,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "rikkahub"
-include(":app")
-include(":highlight")
-include(":ai")
-include(":local-llm")
-include(":llama-cpp")
-include(":search")
-include(":speech")
-include(":common")
-include(":document")
-include(":web")
-include(":material3")
-include(":workspace")
-include(":videogen")
-include(":oauth")
+// The product is the phone-only agent, not the upstream all-purpose chat/workspace app.
+// Preserve upstream sources for attribution/history, but never configure or package them.
+rootProject.name = "LittleYiMobileAgent"
+include(":app", ":ai", ":local-llm", ":common")
+project(":app").projectDir = file("mobile-app")

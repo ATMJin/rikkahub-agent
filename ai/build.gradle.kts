@@ -49,10 +49,7 @@ dependencies {
     api(libs.okhttp.sse)
     api(libs.okhttp.logging)
 
-    // ML Kit GenAI (AICore / Gemini Nano on-device).
-    // Only loads runtime native code on GenAI-capable devices; on others
-    // checkStatus() returns UNAVAILABLE and the provider self-disables.
-    api(libs.genai.prompt)
+    // E2B/LiteRT is the only supported on-device runtime in the mobile product.
 
     // kotlinx
     api(libs.kotlinx.serialization.json)

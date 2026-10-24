@@ -1,7 +1,6 @@
 package me.rerere.ai.provider
 
 import android.content.Context
-import me.rerere.ai.provider.providers.AICoreProvider
 import me.rerere.ai.provider.providers.claude.ClaudeProvider
 import me.rerere.ai.provider.providers.google.GoogleProvider
 import me.rerere.ai.provider.providers.openai.OpenAIProvider
@@ -19,7 +18,6 @@ class ProviderManager(client: OkHttpClient, private val context: Context) {
         registerProvider("openai", OpenAIProvider(client, context))
         registerProvider("google", GoogleProvider(client, context))
         registerProvider("claude", ClaudeProvider(client, context))
-        registerProvider("aicore", AICoreProvider(context))
     }
 
     /**

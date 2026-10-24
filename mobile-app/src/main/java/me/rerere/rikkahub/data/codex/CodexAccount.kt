@@ -1,3 +1,4 @@
+// Reused from ExTV/rikkahub-agent under AGPL-3.0; protocol unchanged in the lean build.
 package me.rerere.rikkahub.data.codex
 
 import kotlinx.serialization.Serializable

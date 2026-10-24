@@ -1,5 +1,9 @@
 # LittleYi mobile-agent fork: first implementation slice
 
+Historical milestone only: the full-app build below has been superseded by the
+four-module phone-only build. See [MOBILE_ONLY.md](MOBILE_ONLY.md) for current commands,
+capabilities, validation and limitations. `:app` now maps to `mobile-app`, not `app/`.
+
 Upstream: https://github.com/ExTV/rikkahub-agent
 
 Baseline commit: a88f5854b4d2e2706ea2ae8304a7d66a3f9f2bbc

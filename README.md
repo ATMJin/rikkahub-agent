@@ -1,3 +1,15 @@
+# 我的手機 Agent（精簡 fork）
+
+目前預設產品為 **LittleYi 手機精簡版**，只建置 `mobile-app`、`ai`、`local-llm`、`common`。
+保留線上模型、離線 Gemma 4 E2B、開 App、系統設定、通知查詢，以及 Wi-Fi／飛航模式修復。
+不包含下方上游介紹的終端機、Linux 工作區、Web 管理介面、Telegram、MCP 或排程功能。
+
+建置、功能邊界及實測清單請見 [精簡版說明](docs/MOBILE_ONLY.md)。授權維持 AGPL-3.0。
+
+---
+
+以下保留原上游介紹供歷史參考，**不是目前 APK 的功能清單**。
+
 <div align="center">
 
 <img src="docs/icon.png" width="96" height="96" alt="RikkaHub Agent" style="border-radius: 24px" />

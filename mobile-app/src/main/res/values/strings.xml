@@ -1,0 +1,4 @@
+<resources>
+    <string name="codex_oauth_ports_unavailable">登入回呼連接埠被占用，請關閉其他登入程序後重試。</string>
+    <string name="network_accessibility_description">只在你確認後操作系統設定中的 Wi-Fi 與飛航開關；不讀取其他 App、不輸入文字、不執行任意點擊。</string>
+</resources>
