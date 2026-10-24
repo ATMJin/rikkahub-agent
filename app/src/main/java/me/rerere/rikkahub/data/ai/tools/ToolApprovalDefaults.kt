@@ -4,10 +4,9 @@ package me.rerere.rikkahub.data.ai.tools
  * Single source of truth for which tools require user approval before they execute.
  *
  * The matching policy is "tool name in the set" — there's no per-arg gating yet (e.g. you
- * can't say "approve termux but only if the command doesn't start with rm"). When the
- * runtime decides whether to ask the user, it consults this set, then the per-conversation
- * "Allow for this chat" allow-list, then the persistent "Always Allow" allow-list (in that
- * order); the prompt only fires when none of those let it through.
+ * can't say "approve termux but only if the command doesn't start with rm"). The
+ * runtime first enforces [ToolApprovalDefaults.requiresFreshConfirmation]. Other approval-required tools may
+ * use the per-conversation "Allow for this chat" or persistent "Always Allow" grants.
  *
  * MCP-relayed tools (any name starting with `mcp__`) are gated separately at the
  * GenerationHandler level — this set covers only locally-defined tools. See
@@ -66,8 +65,7 @@ object ToolApprovalDefaults {
         "set_text",
         "click_node",
         "global_action",
-        "launch_app",
-        "launch_activity",   // launches a specific activity, same trust footprint as launch_app
+        "launch_activity",   // arbitrary activities can expose side-effecting entry points
         "open_url",          // can dial tel:, draft mailto:, hand a URI to any app
         "open_file",         // ACTION_VIEW on a user-supplied path — same surface as launch_app
         "wake_screen",       // acquires wake lock, turns screen on at night
@@ -292,15 +290,37 @@ object ToolApprovalDefaults {
         "grant_directory_access",
     )
 
-    fun allowsAlwaysAllow(toolName: String): Boolean = toolName !in NO_ALWAYS_ALLOW
+    // Screen gestures are deliberately conservative: a generic tap may submit a payment,
+    // send a message or change a setting. Semantic per-action risk classification comes later.
+    val MANDATORY_CONFIRMATION: Set<String> = setOf(
+        "tap", "long_press", "swipe", "scroll", "set_text", "click_node", "global_action",
+        "launch_activity", "open_url", "set_brightness", "set_volume", "set_wallpaper",
+        "send_sms", "send_sms_intent", "send_email_intent", "share",
+        "notification_reply", "notification_action_click", "dismiss_notification",
+        "delete_file", "batch_delete", "keystore_delete_key",
+        "telegram_send_message", "telegram_send_photo", "telegram_send_document",
+        "browser_click", "browser_type", "browser_submit", "browser_select",
+        "browser_press_key", "browser_click_and_read", "browser_eval_js",
+        "shizuku_exec", "termux_run_command", "termux_session_start", "eval_javascript",
+        "ssh_exec", "ssh_exec_saved", "run_js", "workflow_run",
+        "keyboard_type", "keyboard_press_key", "keyboard_delete", "keyboard_clear",
+        "keyboard_set_cursor", "keyboard_select_range",
+    )
+
+    fun requiresFreshConfirmation(toolName: String): Boolean =
+        toolName in MANDATORY_CONFIRMATION || toolName in NO_ALWAYS_ALLOW || toolName.startsWith("mcp__")
+
+    fun canAutoApprove(toolName: String, hasStandingGrant: Boolean): Boolean =
+        hasStandingGrant && !requiresFreshConfirmation(toolName)
+
+    fun allowsAlwaysAllow(toolName: String): Boolean =
+        toolName !in NO_ALWAYS_ALLOW && !requiresFreshConfirmation(toolName)
 
     /**
      * True if [toolName] requires approval. Local tools are looked up in [ALWAYS_ASK];
-     * MCP-relayed tools (`mcp__*`) are always gated because the MCP server's tool surface
-     * is opaque to us — we can't know which calls are destructive. An MCP server that
-     * exposes purely-read tools costs the user one approval per session via "Always
-     * Allow", which is a fair trade for the floor.
+     * MCP-relayed tools (`mcp__*`) require fresh confirmation because their tool surface
+     * is opaque to us and may include destructive operations.
      */
     fun requiresApproval(toolName: String): Boolean =
-        toolName in ALWAYS_ASK || toolName.startsWith("mcp__")
+        toolName in ALWAYS_ASK || requiresFreshConfirmation(toolName)
 }

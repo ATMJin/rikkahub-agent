@@ -1,12 +1,17 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
 import android.content.ComponentName
+import android.app.KeyguardManager
 import android.content.Context
 import android.provider.Settings
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.rikkahub.service.RikkaNotificationListenerService
+
+/** Missing lock-state evidence must never disclose private notification content. */
+internal fun notificationAccessAllowed(deviceLocked: Boolean?, keyguardLocked: Boolean?): Boolean =
+    deviceLocked == false && keyguardLocked == false
 
 /**
  * Bridge between the LLM tool factories and the live notification listener service.
@@ -36,7 +41,21 @@ object NotificationListenerHandle {
         block: suspend (RikkaNotificationListenerService) -> JsonObject
     ): JsonObject {
         val svc = RikkaNotificationListenerService.instance ?: return notBoundEnvelope()
-        return block(svc)
+        if (!isUnlocked(svc)) return lockedEnvelope()
+        val result = block(svc)
+        // A suspending lookup may outlive the unlock state. Check again before its
+        // content enters the model context; never ask the model to redact it afterward.
+        return if (isUnlocked(svc)) result else lockedEnvelope()
+    }
+
+    private fun isUnlocked(context: Context): Boolean {
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        return notificationAccessAllowed(keyguard?.isDeviceLocked, keyguard?.isKeyguardLocked)
+    }
+
+    fun lockedEnvelope(): JsonObject = buildJsonObject {
+        put("error", "device_locked")
+        put("recovery", "請先解鎖手機，再查詢通知本文或執行通知操作。")
     }
 
     fun notBoundEnvelope(): JsonObject = buildJsonObject {

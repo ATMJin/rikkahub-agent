@@ -10,7 +10,7 @@ import okhttp3.OkHttpClient
 /**
  * Provider管理器，负责注册和获取Provider实例
  */
-class ProviderManager(client: OkHttpClient, context: Context) {
+class ProviderManager(client: OkHttpClient, private val context: Context) {
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
 
@@ -39,7 +39,10 @@ class ProviderManager(client: OkHttpClient, context: Context) {
      * @return Provider实例，如果不存在则返回null
      */
     fun getProvider(name: String): Provider<*> {
-        return providers[name] ?: throw IllegalArgumentException("Provider not found: $name")
+        @Suppress("UNCHECKED_CAST")
+        val provider = providers[name] as? Provider<ProviderSetting>
+            ?: throw IllegalArgumentException("Provider not found: $name")
+        return NetworkGuardedProvider(provider) { readInternetState(context) }
     }
 
     /**

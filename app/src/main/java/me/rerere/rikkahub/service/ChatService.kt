@@ -45,6 +45,8 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.OnlineFirstRouting
+import me.rerere.ai.provider.readInternetState
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ToolApprovalState
@@ -1170,7 +1172,8 @@ class ChatService(
         // appScope.launch — a rapid second tap would cancel the first job and silently
         // drop the persisted Always-Allow grant; the user thinks they granted it, the next
         // prompt reappears. NonCancellable + before-launch-completion guarantees the write.
-        if (approved && toolName != null && scope != ApprovalScope.Once) {
+        if (approved && toolName != null && scope != ApprovalScope.Once &&
+            me.rerere.rikkahub.data.ai.tools.ToolApprovalDefaults.allowsAlwaysAllow(toolName)) {
             appScope.launch(NonCancellable) {
                 runCatching {
                     // Smart-cast on the surrounding `if` excluded Once already, so only
@@ -1499,12 +1502,16 @@ class ChatService(
         val initialConversation = getConversationFlow(conversationId).value
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
-        val model = settings.findModelById(
+        val selectedModel = settings.findModelById(
             initialConversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
         )
-            ?: throw IllegalStateException(
-                "No chat model selected. Pick one in Settings → Default models, or send /model in Telegram."
-            )
+        // Resolve once per turn, before compaction and tool construction. Never catch a
+        // provider error here and never persist the offline model as the user's online choice.
+        val model = OnlineFirstRouting.selectModel(
+            selected = selectedModel,
+            providers = settings.providers,
+            internet = readInternetState(context),
+        )
         // Defence against an upstream-Settings bug where disabling all providers can leave
         // the assistant's chatModelId pointing at a model whose provider has enabled=false:
         // the model lookup walks every provider regardless of state, so without this gate

@@ -35,6 +35,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ModelRoutingException
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ResponseStreamErrorException
 import me.rerere.ai.registry.ModelRegistry
@@ -115,7 +116,7 @@ internal fun shouldRetryGenerationStreamFailure(
     if (receivedMeaningfulOutput || retryAttempt >= maxRetries.coerceAtLeast(0).toLong()) {
         return false
     }
-    if (failure is ResponseStreamErrorException || isContextLimitFailure(failure)) {
+    if (failure is ModelRoutingException || failure is ResponseStreamErrorException || isContextLimitFailure(failure)) {
         return false
     }
     if (isNonRetryableClientError(failure)) {
@@ -771,13 +772,16 @@ class GenerationLoop(
                             ))
                         }
                         // Tool needs approval and state is Auto:
-                        toolDef?.needsApproval(tool.inputAsJson()) == true &&
+                        (toolDef?.needsApproval(tool.inputAsJson()) == true ||
+                            me.rerere.rikkahub.data.ai.tools.ToolApprovalDefaults
+                                .requiresFreshConfirmation(tool.toolName)) &&
                             tool.approvalState is ToolApprovalState.Auto -> {
                             // Fresh per-tool auto-approval check (was a frozen pre-
                             // resolved set). Costs a DataStore.first() per tool but tools
                             // are typically <5 per turn so the latency is negligible, and
                             // freshness matters for the YOLO toggle / mid-iteration grants.
-                            if (isToolAutoApproved(tool.toolName)) {
+                            if (me.rerere.rikkahub.data.ai.tools.ToolApprovalDefaults
+                                    .canAutoApprove(tool.toolName, isToolAutoApproved(tool.toolName))) {
                                 tool  // leave as Auto so the executor runs it without prompting
                             } else {
                                 hasPendingApproval = true
@@ -822,6 +826,24 @@ class GenerationLoop(
                 // on a Pending tool (#107).
                 toolsToProcess = resumableToolsIncludingUnexecutedAuto(messages.last().getTools())
                 Log.i(TAG, "generateText: resuming with ${toolsToProcess.size} resumable tools")
+            }
+
+            // An Auto sibling can arrive through the resume path without passing the
+            // fresh-generation approval pass. Gate it before executing any sibling.
+            val unconfirmed = toolsToProcess.filter {
+                it.approvalState is ToolApprovalState.Auto &&
+                    me.rerere.rikkahub.data.ai.tools.ToolApprovalDefaults
+                        .requiresFreshConfirmation(it.toolName)
+            }.map { it.toolCallId }.toSet()
+            if (unconfirmed.isNotEmpty()) {
+                val last = messages.last()
+                messages = messages.dropLast(1) + last.copy(parts = last.parts.map {
+                    if (it is UIMessagePart.Tool && it.toolCallId in unconfirmed) {
+                        it.copy(approvalState = ToolApprovalState.Pending)
+                    } else it
+                })
+                emit(GenerationChunk.Messages(messages))
+                break
             }
 
             // Handle tools (execute approved tools, handle denied tools)

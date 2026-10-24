@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import me.rerere.ai.provider.ModelRoutingException
 import me.rerere.ai.provider.providers.openai.ResponseStreamErrorException
 import me.rerere.ai.util.HttpException
 import org.junit.Assert.assertFalse
@@ -9,6 +10,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GenerationHandlerTransportRetryTest {
+    @Test
+    fun `routing policy rejection is never retried as a transport failure`() {
+        assertFalse(
+            shouldRetryGenerationStreamFailure(
+                failure = ModelRoutingException("Online model required"),
+                retryAttempt = 0,
+                maxRetries = 10,
+                receivedMeaningfulOutput = false,
+            )
+        )
+    }
+
     @Test
     fun `does not report an empty stream once a chunk arrived, even without parseable parts`() {
         assertFalse(shouldReportEmptyGenerationStream(receivedAnyChunk = true))

@@ -330,20 +330,22 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
                                 Text("∞", style = MaterialTheme.typography.labelMedium)
                             }
                         }
-                        FilledTonalIconButton(
-                            onClick = {
-                                if (inFlight) return@FilledTonalIconButton
-                                inFlight = true
-                                onToolApproval(
-                                    tool.toolCallId, true, "",
-                                    me.rerere.rikkahub.service.ChatService.ApprovalScope.ChatScope,
-                                    tool.toolName,
-                                )
-                            },
-                            enabled = !inFlight,
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Text("💬", style = MaterialTheme.typography.labelSmall)
+                        if (allowAlwaysButton) {
+                            FilledTonalIconButton(
+                                onClick = {
+                                    if (inFlight) return@FilledTonalIconButton
+                                    inFlight = true
+                                    onToolApproval(
+                                        tool.toolCallId, true, "",
+                                        me.rerere.rikkahub.service.ChatService.ApprovalScope.ChatScope,
+                                        tool.toolName,
+                                    )
+                                },
+                                enabled = !inFlight,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Text("💬", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                         FilledTonalIconButton(
                             onClick = {
