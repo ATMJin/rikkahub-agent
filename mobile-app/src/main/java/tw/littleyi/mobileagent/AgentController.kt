@@ -20,7 +20,15 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 data class Approval(val id: Long, val name: String, val arguments: String, val createdAt: Long)
-data class AgentState(val text: String = "請先設定線上 Provider；離線 E2B 可由手機檔案匯入。", val busy: Boolean = false, val approval: Approval? = null)
+data class AgentState(
+    val text: String = "請先設定線上 Provider；離線 E2B 可由手機檔案匯入。",
+    val busy: Boolean = false,
+    val approval: Approval? = null,
+    val userPrompt: String? = null,
+    val events: List<AgentEvent> = emptyList(),
+    val inferenceRoute: InternetState? = null,
+    val activeModel: String? = null,
+)
 
 /** No upstream scheduler, server, shell, skills, MCP, automatic grants or hidden tools. */
 class AgentController(private val context: Context) {
@@ -43,7 +51,14 @@ class AgentController(private val context: Context) {
     private var job: Job? = null
     private var approvalResult: CompletableDeferred<Boolean>? = null
     private var nextApprovalId = 0L
-    private fun show(text: String) { mutable.update { it.copy(text = (it.text + "\n\n" + text).takeLast(20000)) } }
+    private fun show(text: String, kind: AgentEventKind = AgentEventKind.STATUS, toolName: String? = null) {
+        mutable.update { it.copy(
+            text = (it.text + "\n\n" + text).takeLast(20000),
+            events = (it.events + AgentEvent(kind, text, toolName)).takeLast(128),
+        ) }
+    }
+
+    fun hasOfflineModel(): Boolean = File(context.filesDir, OnlineFirstRouting.OFFLINE_MODEL_FILE).exists()
 
     fun save(value: Configuration) {
         check(job?.isActive != true) { "請先停止目前工作。" }
@@ -117,31 +132,22 @@ class AgentController(private val context: Context) {
             mutable.update { it.copy(approval = request) }
             val accepted = try { withTimeoutOrNull(60_000) { response.await() } == true }
             finally { approvalResult = null; mutable.update { it.copy(approval = null) } }
-            if (!accepted || SystemClock.elapsedRealtime() - request.createdAt >= 60_000) return "使用者拒絕或確認已過期；沒有執行。"
+            if (!accepted || SystemClock.elapsedRealtime() - request.createdAt >= 60_000) {
+                val result = "使用者拒絕或確認已過期；沒有執行。"
+                show(result, AgentEventKind.CANCELLED, name)
+                return result
+            }
         }
         // Confirmation is tied to this exact immutable name/argument snapshot, never a global grant.
         val result = phone.execute(name, args)
-        show("$name：$result")
+        show(result, AgentEventKind.TOOL, name)
         return result
-    }
-
-    /** Fixed recovery controls use the same validation/confirmation gate, no model/API needed. */
-    fun networkRecovery(name: String, enabled: Boolean) {
-        require(name == "set_wifi_enabled" || name == "set_airplane_mode")
-        if (job?.isActive == true) return
-        job = scope.launch {
-            mutable.value = AgentState("本機網路操作：$name", true)
-            try { show(execute(name, buildJsonObject { put("enabled", enabled) }.toString())) }
-            catch (e: CancellationException) { throw e }
-            catch (e: Exception) { show("停止：${e.message}") }
-            finally { mutable.update { it.copy(busy = false, approval = null) } }
-        }
     }
 
     fun send(prompt: String, allowNotifications: Boolean = false) {
         if (prompt.isBlank() || job?.isActive == true) return
         job = scope.launch {
-            mutable.value = AgentState("你：$prompt", true)
+            mutable.value = AgentState(text = "你：$prompt", busy = true, userPrompt = prompt)
             // Deliberately no persisted/private history or cross-provider background summarization.
             var messages = listOf(UIMessage.system(SYSTEM), UIMessage.user(prompt))
             try {
@@ -150,9 +156,12 @@ class AgentController(private val context: Context) {
                     val online = cloudModel()
                     val local = Model(modelId = OnlineFirstRouting.OFFLINE_MODEL_FILE, abilities = listOf(ModelAbility.TOOL))
                     val settings = listOf(cloud(online), ProviderSetting.LiteRtLocal(enabled = true, models = listOf(local)))
-                    val selected = OnlineFirstRouting.selectModel(online.takeIf { it.modelId.isNotBlank() }, settings, readInternetState(context))
+                    val internet = readInternetState(context)
+                    mutable.update { it.copy(inferenceRoute = internet) }
+                    val selected = OnlineFirstRouting.selectModel(online.takeIf { it.modelId.isNotBlank() }, settings, internet)
                     val setting = settings.first { owner -> owner.models.any { it.id == selected.id } }
-                    show(if (OnlineFirstRouting.isOnDevice(setting)) "推論：離線 E2B" else "推論：已選線上模型 ${selected.modelId}")
+                    mutable.update { it.copy(activeModel = selected.modelId) }
+                    show(if (OnlineFirstRouting.isOnDevice(setting)) "由本機 E2B 處理這一步" else "由已選線上模型處理這一步：${selected.modelId}")
                     val handler = StreamChunkHandler(selected)
                     var response = listOf(UIMessage.assistant(""))
                     providers.getProviderByType(setting).streamText(setting, messages, TextGenerationParams(
@@ -162,7 +171,7 @@ class AgentController(private val context: Context) {
                         response = handler.handle(response, chunk)
                     }
                     val answer = response.last()
-                    if (answer.toText().isNotBlank()) show(answer.toText())
+                    if (answer.toText().isNotBlank()) show(answer.toText(), AgentEventKind.ASSISTANT)
                     val calls = answer.getTools()
                     if (calls.isEmpty()) return@launch
                     check(calls.size <= 8) { "單次工具數量超出安全上限。" }
@@ -177,8 +186,8 @@ class AgentController(private val context: Context) {
                     // Network state is reselected at the NEXT inference, never inferred from an API error.
                 }
                 show("已達 8 步安全上限，請檢查結果後再下指令。")
-            } catch (e: CancellationException) { show("已停止；已執行的系統操作不會自動還原。"); throw e }
-            catch (e: Exception) { show("停止：${e.message?.take(500)}\n不會把 API 錯誤當成斷網，也不會盲目重試操作。") }
+            } catch (e: CancellationException) { show("已停止；已執行的系統操作不會自動還原。", AgentEventKind.CANCELLED); throw e }
+            catch (e: Exception) { show("停止：${e.message?.take(500)}\n不會把 API 錯誤當成斷網，也不會盲目重試操作。", AgentEventKind.ERROR) }
             finally { approvalResult = null; mutable.update { it.copy(busy = false, approval = null) } }
         }
     }
